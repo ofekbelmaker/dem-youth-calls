@@ -93,8 +93,8 @@ export async function getActiveEvent(): Promise<EventInfo | null> {
 /* המאגר המשותף                                                        */
 /* ------------------------------------------------------------------ */
 
-/** כמה זמן כרטיס שנפתח שמור למי שפתח אותו */
-const CLAIM_MINUTES = 10;
+/* חלון התפיסה — עשר דקות — נאכף בפונקציה next_assignment שבמסד,
+   לא כאן. ראה supabase/next-card.sql */
 
 type ContactRow = {
   outcome: Outcome;
@@ -180,65 +180,6 @@ async function historyFor(
   return out;
 }
 
-export type SharedQueue = {
-  /** פנויים לקחת — כולל מה שאני כבר תפסתי ועוד לא תיעדתי */
-  open: QueueItem[];
-  /** מה שאני תיעדתי בפעולה הזו */
-  mine: QueueItem[];
-  total: number;
-  done: number;
-  /** נלקחו כרגע על ידי אחרים */
-  claimedByOthers: number;
-};
-
-export async function getSharedQueue(
-  callerId: string,
-  eventId: string,
-): Promise<SharedQueue> {
-  const { data, error } = await db
-    .from("assignments")
-    .select(SELECT)
-    .eq("event_id", eventId);
-
-  if (error) throw new Error(error.message);
-
-  const rows = ((data ?? []) as unknown as AssignmentRow[]).filter(
-    (r) => r.people !== null && r.state !== "skipped",
-  );
-
-  const cutoff = Date.now() - CLAIM_MINUTES * 60_000;
-  const isHeldByOther = (r: AssignmentRow) =>
-    r.assigned_to !== null &&
-    r.assigned_to !== callerId &&
-    r.claimed_at !== null &&
-    new Date(r.claimed_at).getTime() > cutoff;
-
-  const openRows = rows.filter(
-    (r) => r.state === "pending" && !isHeldByOther(r),
-  );
-  const mineRows = rows.filter(
-    (r) => r.assigned_to === callerId && (r.contacts?.length ?? 0) > 0,
-  );
-
-  const history = await historyFor(
-    [...openRows, ...mineRows].map((r) => r.person_id),
-    eventId,
-  );
-
-  const byName = (a: QueueItem, b: QueueItem) =>
-    a.fullName.localeCompare(b.fullName, "he");
-
-  return {
-    open: openRows.map((r) => toItem(r, history)).sort(byName),
-    mine: mineRows.map((r) => toItem(r, history)).sort(byName),
-    total: rows.length,
-    done: rows.filter((r) => r.state === "done").length,
-    claimedByOthers: rows.filter(
-      (r) => r.state === "pending" && isHeldByOther(r),
-    ).length,
-  };
-}
-
 /* ------------------------------------------------------------------ */
 /* תפיסה, שחרור, תיעוד                                                 */
 /* ------------------------------------------------------------------ */
@@ -308,19 +249,6 @@ export async function getNextCard(
   return { card: toItem(row, history), ...progress };
 }
 
-/** מחזיר false אם מישהו אחר הספיק לתפוס את הכרטיס */
-export async function claimAssignment(
-  callerId: string,
-  assignmentId: string,
-): Promise<boolean> {
-  const { data, error } = await db.rpc("claim_assignment", {
-    p_assignment: assignmentId,
-    p_profile: callerId,
-  });
-  if (error) throw new Error(error.message);
-  return data === true;
-}
-
 export async function releaseAssignment(
   callerId: string,
   assignmentId: string,
@@ -359,6 +287,35 @@ export async function insertContact(
 /* ------------------------------------------------------------------ */
 /* דשבורד                                                              */
 /* ------------------------------------------------------------------ */
+
+/** פעיל שכמה טלפנים דילגו עליו ואיש לא התקשר אליו */
+export type NeglectedPerson = {
+  fullName: string;
+  phoneE164: string;
+  note: string | null;
+  skipCount: number;
+  skippedBy: number;
+};
+
+export async function getNeglected(
+  eventId: string,
+): Promise<NeglectedPerson[]> {
+  const { data, error } = await db
+    .from("neglected_people")
+    .select("full_name, phone_e164, notes, skip_count, skipped_by")
+    .eq("event_id", eventId);
+
+  /* אם התצוגה עוד לא קיימת במסד, לא מפילים את הדשבורד בגללה */
+  if (error) return [];
+
+  return (data ?? []).map((r) => ({
+    fullName: r.full_name,
+    phoneE164: r.phone_e164,
+    note: r.notes,
+    skipCount: r.skip_count,
+    skippedBy: r.skipped_by,
+  }));
+}
 
 export async function getEventDashboard(eventId: string): Promise<{
   stats: EventStats;

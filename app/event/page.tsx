@@ -3,6 +3,7 @@ import {
   getActiveEvent,
   getCurrentCaller,
   getEventDashboard,
+  getNeglected,
 } from "@/lib/queries";
 import { countdownText, formatWhen } from "@/lib/format";
 
@@ -21,7 +22,10 @@ export default async function EventPage() {
     );
   }
 
-  const { stats, callers } = await getEventDashboard(event.id);
+  const [{ stats, callers }, neglected] = await Promise.all([
+    getEventDashboard(event.id),
+    getNeglected(event.id),
+  ]);
 
   const coverage = stats.assigned
     ? Math.round((stats.reached / stats.assigned) * 100)
@@ -87,6 +91,33 @@ export default async function EventPage() {
               <div className="v">{stats.rsvpNo}</div>
             </div>
           </div>
+
+          {neglected.length > 0 && (
+            <section className="panel">
+              <h3>אף אחד לא מתקשר אליהם</h3>
+              <p className="fineprint" style={{ textAlign: "start", margin: 0 }}>
+                כמה טלפנים דילגו עליהם ואיש עוד לא דיבר איתם. שווה שתתקשר
+                אליהם בעצמך.
+              </p>
+              <div className="neglected">
+                {neglected.map((p) => (
+                  <a
+                    key={p.phoneE164}
+                    href={`tel:${p.phoneE164}`}
+                    className="neglected-row"
+                  >
+                    <span className="who">
+                      <b>{p.fullName}</b>
+                      {p.note && <small>{p.note}</small>}
+                    </span>
+                    <span className="count">
+                      דולג {p.skipCount}× · {p.skippedBy} מתקשרים
+                    </span>
+                  </a>
+                ))}
+              </div>
+            </section>
+          )}
 
           <section className="panel">
             <h3>מי תרם כמה</h3>

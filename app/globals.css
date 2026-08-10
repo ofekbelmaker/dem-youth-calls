@@ -690,6 +690,31 @@ tr.me td { background: var(--signal-dim); }
   margin-top: 2px;
 }
 
+/* ---------- מי שאף אחד לא מתקשר אליו ---------- */
+
+.neglected { display: flex; flex-direction: column; gap: 7px; }
+
+.neglected-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 11px 13px;
+  background: var(--alert-dim);
+  border-radius: var(--radius-sm);
+  text-decoration: none;
+  color: var(--alert);
+}
+.neglected-row .who { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.neglected-row b { font-size: 14px; font-weight: 650; }
+.neglected-row small { font-size: 11.5px; opacity: .8; }
+.neglected-row .count {
+  font-size: 11.5px;
+  font-weight: 650;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
 /* ---------- כרטיס שיחה יחיד ---------- */
 
 .card {
