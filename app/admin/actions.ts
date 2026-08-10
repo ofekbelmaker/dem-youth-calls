@@ -3,6 +3,7 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { sessionCookieOptions } from "@/lib/cookies";
+import { getCurrentCaller } from "@/lib/queries";
 import {
   ADMIN_COOKIE,
   createAdminValue,
@@ -16,6 +17,11 @@ export async function adminEnterAction(
   _prev: AdminState,
   formData: FormData,
 ): Promise<AdminState> {
+  /* פעולות שרת ניתנות לקריאה ישירה, בלי לעבור דרך המסך. לכן הבדיקה
+     שהמשתמש כבר מזוהה כטלפן חוזרת כאן ולא נשענת על השער בלבד. */
+  const caller = await getCurrentCaller();
+  if (!caller) return { error: "צריך להיכנס קודם עם קוד הכניסה" };
+
   const code = String(formData.get("code") ?? "");
   if (!code.trim()) return { error: "הקלד את קוד הרכז" };
 
