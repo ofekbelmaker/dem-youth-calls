@@ -1,0 +1,421 @@
+import "server-only";
+import { cookies } from "next/headers";
+import { db } from "./db";
+import {
+  ADMIN_COOKIE,
+  isAdminSession,
+  readSessionValue,
+  SESSION_COOKIE,
+} from "./session";
+import type {
+  Caller,
+  CallerProgress,
+  ContactDraft,
+  EventInfo,
+  EventStats,
+  Outcome,
+  QueueItem,
+  Rsvp,
+} from "./types";
+
+/* ------------------------------------------------------------------ */
+/* מי מחובר                                                            */
+/* ------------------------------------------------------------------ */
+
+export async function getCallers(): Promise<Caller[]> {
+  const { data, error } = await db
+    .from("profiles")
+    .select("id, display_name")
+    .eq("is_active", true)
+    .order("created_at");
+
+  if (error) throw new Error(error.message);
+  return (data ?? []).map((p) => ({ id: p.id, name: p.display_name }));
+}
+
+/** הטלפן המחובר, או null אם העוגייה מצביעה על מי שכבר לא קיים */
+export async function getCurrentCaller(): Promise<Caller | null> {
+  const store = await cookies();
+  const id = await readSessionValue(store.get(SESSION_COOKIE)?.value);
+  if (!id) return null;
+
+  const { data } = await db
+    .from("profiles")
+    .select("id, display_name")
+    .eq("id", id)
+    .eq("is_active", true)
+    .maybeSingle();
+
+  return data ? { id: data.id, name: data.display_name } : null;
+}
+
+export async function getIsAdmin(): Promise<boolean> {
+  const store = await cookies();
+  return isAdminSession(store.get(ADMIN_COOKIE)?.value);
+}
+
+/* ------------------------------------------------------------------ */
+/* הפעולה                                                              */
+/* ------------------------------------------------------------------ */
+
+export async function getActiveEvent(): Promise<EventInfo | null> {
+  const upcoming = await db
+    .from("events")
+    .select("id, title, starts_at, location, target_count")
+    .gte("starts_at", new Date().toISOString())
+    .order("starts_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  const row =
+    upcoming.data ??
+    (
+      await db
+        .from("events")
+        .select("id, title, starts_at, location, target_count")
+        .order("starts_at", { ascending: false })
+        .limit(1)
+        .maybeSingle()
+    ).data;
+
+  if (!row) return null;
+
+  return {
+    id: row.id,
+    title: row.title,
+    startsAt: row.starts_at,
+    location: row.location,
+    targetCount: row.target_count,
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/* המאגר המשותף                                                        */
+/* ------------------------------------------------------------------ */
+
+/** כמה זמן כרטיס שנפתח שמור למי שפתח אותו */
+const CLAIM_MINUTES = 10;
+
+type ContactRow = {
+  outcome: Outcome;
+  rsvp: Rsvp | null;
+  needs_ride: boolean;
+  contacted_at: string;
+};
+
+type AssignmentRow = {
+  id: string;
+  state: "pending" | "done" | "skipped";
+  assigned_to: string | null;
+  claimed_at: string | null;
+  person_id: string;
+  people: {
+    full_name: string;
+    phone_e164: string;
+    grade: string | null;
+    notes: string | null;
+  } | null;
+  contacts: ContactRow[];
+};
+
+const SELECT =
+  "id, state, assigned_to, claimed_at, person_id, " +
+  "people ( full_name, phone_e164, grade, notes ), " +
+  "contacts ( outcome, rsvp, needs_ride, contacted_at )";
+
+function latest(contacts: ContactRow[]): ContactRow | null {
+  if (!contacts.length) return null;
+  return [...contacts].sort((a, b) =>
+    a.contacted_at < b.contacted_at ? 1 : -1,
+  )[0];
+}
+
+function toItem(
+  row: AssignmentRow,
+  history: Map<string, { attended: number; total: number }>,
+): QueueItem {
+  const last = latest(row.contacts ?? []);
+  const h = history.get(row.person_id) ?? { attended: 0, total: 0 };
+  return {
+    assignmentId: row.id,
+    personId: row.person_id,
+    fullName: row.people!.full_name,
+    phoneE164: row.people!.phone_e164,
+    grade: row.people!.grade,
+    note: row.people!.notes,
+    state: row.state,
+    lastOutcome: last?.outcome ?? null,
+    lastRsvp: last?.rsvp ?? null,
+    lastNeedsRide: last?.needs_ride ?? false,
+    attendedCount: h.attended,
+    totalEvents: h.total,
+  };
+}
+
+/** "הגיע ב-3 מ-4 האחרונות" — נבנה מפעולות קודמות */
+async function historyFor(
+  personIds: string[],
+  exceptEventId: string,
+): Promise<Map<string, { attended: number; total: number }>> {
+  const out = new Map<string, { attended: number; total: number }>();
+  if (!personIds.length) return out;
+
+  const { data } = await db
+    .from("assignments")
+    .select("person_id, contacts ( rsvp )")
+    .in("person_id", personIds)
+    .neq("event_id", exceptEventId);
+
+  for (const row of (data ?? []) as unknown as {
+    person_id: string;
+    contacts: { rsvp: Rsvp | null }[];
+  }[]) {
+    if (!row.contacts?.length) continue;
+    const entry = out.get(row.person_id) ?? { attended: 0, total: 0 };
+    entry.total += 1;
+    if (row.contacts.some((c) => c.rsvp === "yes")) entry.attended += 1;
+    out.set(row.person_id, entry);
+  }
+
+  return out;
+}
+
+export type SharedQueue = {
+  /** פנויים לקחת — כולל מה שאני כבר תפסתי ועוד לא תיעדתי */
+  open: QueueItem[];
+  /** מה שאני תיעדתי בפעולה הזו */
+  mine: QueueItem[];
+  total: number;
+  done: number;
+  /** נלקחו כרגע על ידי אחרים */
+  claimedByOthers: number;
+};
+
+export async function getSharedQueue(
+  callerId: string,
+  eventId: string,
+): Promise<SharedQueue> {
+  const { data, error } = await db
+    .from("assignments")
+    .select(SELECT)
+    .eq("event_id", eventId);
+
+  if (error) throw new Error(error.message);
+
+  const rows = ((data ?? []) as unknown as AssignmentRow[]).filter(
+    (r) => r.people !== null && r.state !== "skipped",
+  );
+
+  const cutoff = Date.now() - CLAIM_MINUTES * 60_000;
+  const isHeldByOther = (r: AssignmentRow) =>
+    r.assigned_to !== null &&
+    r.assigned_to !== callerId &&
+    r.claimed_at !== null &&
+    new Date(r.claimed_at).getTime() > cutoff;
+
+  const openRows = rows.filter(
+    (r) => r.state === "pending" && !isHeldByOther(r),
+  );
+  const mineRows = rows.filter(
+    (r) => r.assigned_to === callerId && (r.contacts?.length ?? 0) > 0,
+  );
+
+  const history = await historyFor(
+    [...openRows, ...mineRows].map((r) => r.person_id),
+    eventId,
+  );
+
+  const byName = (a: QueueItem, b: QueueItem) =>
+    a.fullName.localeCompare(b.fullName, "he");
+
+  return {
+    open: openRows.map((r) => toItem(r, history)).sort(byName),
+    mine: mineRows.map((r) => toItem(r, history)).sort(byName),
+    total: rows.length,
+    done: rows.filter((r) => r.state === "done").length,
+    claimedByOthers: rows.filter(
+      (r) => r.state === "pending" && isHeldByOther(r),
+    ).length,
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/* תפיסה, שחרור, תיעוד                                                 */
+/* ------------------------------------------------------------------ */
+
+export type Progress = { done: number; total: number; mine: number };
+
+export async function getProgress(
+  callerId: string,
+  eventId: string,
+): Promise<Progress> {
+  const [{ data: rows }, { data: mine }] = await Promise.all([
+    db.from("assignments").select("id, state").eq("event_id", eventId),
+    db
+      .from("contacts")
+      .select("id, assignment:assignments!inner(event_id)")
+      .eq("contacted_by", callerId)
+      .eq("assignment.event_id", eventId),
+  ]);
+
+  const all = rows ?? [];
+  return {
+    done: all.filter((r) => r.state === "done").length,
+    total: all.filter((r) => r.state !== "skipped").length,
+    mine: (mine ?? []).length,
+  };
+}
+
+export type CardState = {
+  card: QueueItem | null;
+  /** כמה שיחות נעשו בסך הכל בפעולה */
+  done: number;
+  total: number;
+  /** כמה תיעדתי אני */
+  mine: number;
+};
+
+/**
+ * מוסר לטלפן את הפעיל הבא ותופס אותו עבורו.
+ * exclude — כרטיסים שהמתקשר דילג עליהם בסבב הנוכחי.
+ */
+export async function getNextCard(
+  callerId: string,
+  eventId: string,
+  exclude: string[] = [],
+): Promise<CardState> {
+  const { data: nextId, error } = await db.rpc("next_assignment", {
+    p_event: eventId,
+    p_profile: callerId,
+    p_exclude: exclude,
+  });
+  if (error) throw new Error(error.message);
+
+  const progress = await getProgress(callerId, eventId);
+
+  if (!nextId) return { card: null, ...progress };
+
+  const { data } = await db
+    .from("assignments")
+    .select(SELECT)
+    .eq("id", nextId)
+    .maybeSingle();
+
+  const row = data as unknown as AssignmentRow | null;
+  if (!row?.people) return { card: null, ...progress };
+
+  const history = await historyFor([row.person_id], eventId);
+  return { card: toItem(row, history), ...progress };
+}
+
+/** מחזיר false אם מישהו אחר הספיק לתפוס את הכרטיס */
+export async function claimAssignment(
+  callerId: string,
+  assignmentId: string,
+): Promise<boolean> {
+  const { data, error } = await db.rpc("claim_assignment", {
+    p_assignment: assignmentId,
+    p_profile: callerId,
+  });
+  if (error) throw new Error(error.message);
+  return data === true;
+}
+
+export async function releaseAssignment(
+  callerId: string,
+  assignmentId: string,
+): Promise<void> {
+  await db.rpc("release_assignment", {
+    p_assignment: assignmentId,
+    p_profile: callerId,
+  });
+}
+
+export async function insertContact(
+  callerId: string,
+  draft: ContactDraft,
+): Promise<void> {
+  /* המפתח עוקף RLS, ולכן בדיקת הבעלות הזו היא ההגנה היחידה */
+  const { data: owned } = await db
+    .from("assignments")
+    .select("id")
+    .eq("id", draft.assignmentId)
+    .eq("assigned_to", callerId)
+    .maybeSingle();
+
+  if (!owned) throw new Error("הכרטיס כבר לא שלך");
+
+  const { error } = await db.from("contacts").insert({
+    assignment_id: draft.assignmentId,
+    contacted_by: callerId,
+    outcome: draft.outcome,
+    rsvp: draft.rsvp ?? "unknown",
+    needs_ride: draft.needsRide,
+  });
+
+  if (error) throw new Error(error.message);
+}
+
+/* ------------------------------------------------------------------ */
+/* דשבורד                                                              */
+/* ------------------------------------------------------------------ */
+
+export async function getEventDashboard(eventId: string): Promise<{
+  stats: EventStats;
+  callers: CallerProgress[];
+}> {
+  const [{ data: rows }, { data: profiles }] = await Promise.all([
+    db.from("assignments").select(SELECT).eq("event_id", eventId),
+    db.from("profiles").select("id, display_name").eq("is_active", true),
+  ]);
+
+  const assignments = ((rows ?? []) as unknown as AssignmentRow[]).filter(
+    (r) => r.state !== "skipped",
+  );
+  const names = new Map((profiles ?? []).map((p) => [p.id, p.display_name]));
+
+  const stats: EventStats = {
+    assigned: assignments.length,
+    reached: 0,
+    answered: 0,
+    rsvpYes: 0,
+    rsvpMaybe: 0,
+    rsvpNo: 0,
+    needsRide: 0,
+  };
+
+  /* בלי חלוקה מראש אין "כמה נשאר לו" — יש רק כמה כל אחד תרם */
+  const perCaller = new Map<string, { reached: number; rsvpYes: number }>();
+
+  for (const a of assignments) {
+    const last = latest(a.contacts ?? []);
+    if (!last) continue;
+
+    stats.reached += 1;
+    if (last.outcome === "answered") stats.answered += 1;
+    if (last.rsvp === "yes") stats.rsvpYes += 1;
+    if (last.rsvp === "maybe") stats.rsvpMaybe += 1;
+    if (last.rsvp === "no") stats.rsvpNo += 1;
+    if (last.needs_ride) stats.needsRide += 1;
+
+    if (a.assigned_to) {
+      const entry = perCaller.get(a.assigned_to) ?? { reached: 0, rsvpYes: 0 };
+      entry.reached += 1;
+      if (last.rsvp === "yes") entry.rsvpYes += 1;
+      perCaller.set(a.assigned_to, entry);
+    }
+  }
+
+  const callers: CallerProgress[] = [...names.entries()]
+    .map(([id, name]) => ({
+      profileId: id,
+      displayName: name,
+      assigned: 0,
+      reached: perCaller.get(id)?.reached ?? 0,
+      rsvpYes: perCaller.get(id)?.rsvpYes ?? 0,
+      isSelf: false,
+    }))
+    .sort((a, b) => b.reached - a.reached);
+
+  return { stats, callers };
+}
