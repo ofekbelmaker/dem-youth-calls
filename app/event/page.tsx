@@ -94,10 +94,10 @@ export default async function EventPage() {
 
           {neglected.length > 0 && (
             <section className="panel">
-              <h3>אף אחד לא מתקשר אליהם</h3>
+              <h3>לא נוצר קשר</h3>
               <p className="fineprint" style={{ textAlign: "start", margin: 0 }}>
-                כמה טלפנים דילגו עליהם ואיש עוד לא דיבר איתם. שווה שתתקשר
-                אליהם בעצמך.
+                כמה טלפנים דילגו עליהם ועדיין לא נוצר איתם קשר. שווה שתתקשר
+                בעצמך.
               </p>
               <div className="neglected">
                 {neglected.map((p) => (
