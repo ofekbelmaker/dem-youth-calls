@@ -9,6 +9,7 @@ import {
   clientKey,
   recordFailure,
   recordSuccess,
+  wait,
 } from "@/lib/ratelimit";
 import {
   ADMIN_COOKIE,
@@ -41,15 +42,14 @@ export async function verifyCodeAction(
   if (!code.trim()) return { error: "הקלד את קוד הכניסה" };
 
   const key = await clientKey();
-  const rate = checkRate(key);
+  const rate = await checkRate(key);
   if (rate.blocked) {
     return {
       error: `יותר מדי ניסיונות. נסה שוב בעוד ${rate.retryInMinutes} דקות.`,
     };
   }
 
-  /* השהיה קטנה — מייקרת ניחוש בכוח גס בלי להפריע למשתמש אמיתי */
-  await new Promise((r) => setTimeout(r, 400));
+  await wait(rate.delayMs);
 
   await logCodeAttempt("כניסה", code, process.env.CALLER_ACCESS_CODE);
 
@@ -60,11 +60,11 @@ export async function verifyCodeAction(
   const asCaller = isAccessCodeValid(code);
 
   if (!asCaller && !asAdmin) {
-    recordFailure(key);
+    await recordFailure(key);
     return { error: "הקוד שגוי. בדוק מול מי ששלח לך את הקישור." };
   }
 
-  recordSuccess(key);
+  await recordSuccess(key);
 
   const store = await cookies();
   store.set(GATE_COOKIE, await createGateValue(asAdmin ? "admin" : "caller"), {

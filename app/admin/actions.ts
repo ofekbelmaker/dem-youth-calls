@@ -5,6 +5,13 @@ import { redirect } from "next/navigation";
 import { sessionCookieOptions } from "@/lib/cookies";
 import { getCurrentCaller } from "@/lib/queries";
 import {
+  checkRate,
+  clientKey,
+  recordFailure,
+  recordSuccess,
+  wait,
+} from "@/lib/ratelimit";
+import {
   ADMIN_COOKIE,
   createAdminValue,
   isAdminCodeValid,
@@ -25,13 +32,25 @@ export async function adminEnterAction(
   const code = String(formData.get("code") ?? "");
   if (!code.trim()) return { error: "הקלד את קוד הרכז" };
 
-  await new Promise((r) => setTimeout(r, 400));
+  /* אותה הגבלה כמו במסך הכניסה. קוד הרכז ניתן לניחוש באותה מידה,
+     ועד עכשיו הוא היה מוגן רק בהשהיה קבועה. */
+  const key = "admin:" + (await clientKey());
+  const rate = await checkRate(key);
+  if (rate.blocked) {
+    return {
+      error: `יותר מדי ניסיונות. נסה שוב בעוד ${rate.retryInMinutes} דקות.`,
+    };
+  }
+  await wait(rate.delayMs);
 
   await logCodeAttempt("רכז", code, process.env.ADMIN_ACCESS_CODE);
 
   if (!isAdminCodeValid(code)) {
+    await recordFailure(key);
     return { error: "הקוד שגוי." };
   }
+
+  await recordSuccess(key);
 
   const store = await cookies();
   store.set(ADMIN_COOKIE, await createAdminValue(), await sessionCookieOptions());

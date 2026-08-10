@@ -1,31 +1,31 @@
+import "server-only";
 import { headers } from "next/headers";
+import { db } from "./db";
 
 /**
  * הגבלת קצב לניסיונות קוד.
  *
- * הקוד משותף לכל הטלפנים, ולכן הוא קצר וזכיר — מה שהופך ניחוש
- * אוטומטי לאיום ממשי ברגע שסורק מוצא את הכתובת. ההגבלה כאן לא
- * מונעת ניחוש, היא מייקרת אותו בסדרי גודל.
+ * הספירה במסד ולא בזיכרון. בענן האפליקציה רצה כמופעים קצרי-חיים,
+ * וספירה בזיכרון של מופע אחד לא נראית לאחרים ומתאפסת עם מחזורו —
+ * כלומר היא כמעט חסרת ערך שם. המסד הוא הזיכרון המשותף היחיד.
  *
- * הספירה בזיכרון התהליך. בהרצה מקומית זה מדויק; בפריסה עם כמה
- * מופעים כל אחד סופר לעצמו, כלומר ההגבלה רופפת יותר אבל עדיין
- * חוסמת התקפה מהירה. אם נגיע לעומס אמיתי, זה עובר למסד.
+ * שתי שכבות:
+ *   • לפי מקור — חוסם ניסיונות חוזרים מאותה כתובת.
+ *   • גלובלי — מאט את כולם כשיש פרץ חריג, כי תוקף יכול להחליף
+ *     כתובות. במכוון האטה ולא חסימה, כדי שלא יהיה אפשר לנעול
+ *     את הטלפנים האמיתיים בערב פעולה.
  */
 
-const WINDOW_MS = 10 * 60 * 1000; // חלון של עשר דקות
-const MAX_ATTEMPTS = 8; // ניסיונות כושלים לפני חסימה
-const BLOCK_MS = 15 * 60 * 1000; // משך החסימה
+/** כשלונות מאותו מקור ב-15 דקות לפני חסימה */
+const SOURCE_LIMIT = 5;
+/** משך החסימה */
+const BLOCK_MINUTES = 30;
+/** כשלונות מכל המקורות ב-10 דקות שמפעילים האטה */
+const GLOBAL_THRESHOLD = 25;
 
-type Entry = { failures: number; firstAt: number; blockedUntil: number };
-
-const attempts = new Map<string, Entry>();
-
-/** מנקה רשומות ישנות כדי שהמפה לא תגדל בלי גבול */
-function sweep(now: number): void {
-  for (const [key, e] of attempts) {
-    if (e.blockedUntil < now && now - e.firstAt > WINDOW_MS) attempts.delete(key);
-  }
-}
+/** השהיה בסיסית — מייקרת ניחוש בלי להפריע למשתמש אמיתי */
+const BASE_DELAY_MS = 400;
+const MAX_DELAY_MS = 6000;
 
 export async function clientKey(): Promise<string> {
   const h = await headers();
@@ -34,44 +34,46 @@ export async function clientKey(): Promise<string> {
   return h.get("x-real-ip") ?? "unknown";
 }
 
-export type RateState =
-  | { blocked: false }
-  | { blocked: true; retryInMinutes: number };
+export type RateDecision =
+  | { blocked: true; retryInMinutes: number }
+  | { blocked: false; delayMs: number };
 
-export function checkRate(key: string): RateState {
-  const now = Date.now();
-  sweep(now);
+export async function checkRate(key: string): Promise<RateDecision> {
+  const { data, error } = await db.rpc("login_rate_state", { p_key: key });
 
-  const entry = attempts.get(key);
-  if (!entry) return { blocked: false };
-
-  if (entry.blockedUntil > now) {
-    return {
-      blocked: true,
-      retryInMinutes: Math.max(1, Math.ceil((entry.blockedUntil - now) / 60000)),
-    };
+  /* אם הבדיקה עצמה נכשלת, לא פותחים את הדלת לרווחה —
+     משהים ומאפשרים, אבל לא מדלגים על ההשהיה */
+  if (error || !data?.length) {
+    return { blocked: false, delayMs: BASE_DELAY_MS };
   }
 
-  return { blocked: false };
+  const { from_source: fromSource, global } = data[0] as {
+    from_source: number;
+    global: number;
+  };
+
+  if (fromSource >= SOURCE_LIMIT) {
+    return { blocked: true, retryInMinutes: BLOCK_MINUTES };
+  }
+
+  /* ההשהיה גדלה עם כל כישלון, ועוד יותר כשיש פרץ כללי */
+  const surge = global >= GLOBAL_THRESHOLD ? 4 : 1;
+  const delayMs = Math.min(
+    MAX_DELAY_MS,
+    BASE_DELAY_MS * (fromSource + 1) * surge,
+  );
+
+  return { blocked: false, delayMs };
 }
 
-export function recordFailure(key: string): void {
-  const now = Date.now();
-  const entry = attempts.get(key);
-
-  if (!entry || now - entry.firstAt > WINDOW_MS) {
-    attempts.set(key, { failures: 1, firstAt: now, blockedUntil: 0 });
-    return;
-  }
-
-  entry.failures += 1;
-  if (entry.failures >= MAX_ATTEMPTS) {
-    entry.blockedUntil = now + BLOCK_MS;
-    entry.failures = 0;
-    entry.firstAt = now;
-  }
+export async function recordFailure(key: string): Promise<void> {
+  await db.rpc("record_login_failure", { p_key: key });
 }
 
-export function recordSuccess(key: string): void {
-  attempts.delete(key);
+export async function recordSuccess(key: string): Promise<void> {
+  await db.rpc("clear_login_failures", { p_key: key });
+}
+
+export function wait(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
 }
