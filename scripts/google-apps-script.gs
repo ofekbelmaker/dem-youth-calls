@@ -14,6 +14,8 @@
  */
 
 /* ─────────── להשלים ─────────── */
+/* למלא בעורך של Apps Script, לא בקובץ שבריפו. סוד שנשמר בגיט הוא
+   סוד שדלף — גם אחרי שמוחקים אותו הוא נשאר בהיסטוריה. */
 
 const SUPABASE_URL = "https://hqytnipauhkcfddjdoju.supabase.co";
 
@@ -119,7 +121,21 @@ function syncNewSignups() {
   let failed = 0;
   let processedRow = startRow - 1;
 
+  /* Apps Script קוטע ריצה אחרי שש דקות, באמצע פקודה ובלי אזהרה.
+     בלי היציאה המסודרת הזו, סנכרון ראשון של גיליון מלא היה נקטע
+     לפני שההתקדמות נשמרת — וכל ריצה הייתה מתחילה שוב מאותה שורה,
+     בלי להתקדם לעולם. */
+  const deadline = Date.now() + 4.5 * 60 * 1000;
+
   for (let i = 0; i < rows.length; i++) {
+    if (Date.now() > deadline) {
+      Logger.log(
+        "עצירה מסודרת לפני מגבלת הזמן. הריצה הבאה תמשיך משורה " +
+          (processedRow + 1),
+      );
+      break;
+    }
+
     const row = rows[i];
     const get = function (key) {
       return idx[key] === -1 ? "" : String(row[idx[key]] || "").trim();
