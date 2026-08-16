@@ -20,7 +20,7 @@ const SUPABASE_URL = "https://hqytnipauhkcfddjdoju.supabase.co";
 /** המפתח הציבורי מ-Project Settings ← API (anon / Publishable) */
 const SUPABASE_ANON_KEY = "כאן_להדביק_את_המפתח";
 
-/** אותו ערך בדיוק שהוגדר ב-app_config דרך auto-sync.sql */
+/** אותו ערך בדיוק שהוגדר ב-app_config דרך auto-sync.sql. שמור ב-.env.local */
 const SIGNUP_SECRET = "כאן_להדביק_את_הסוד";
 
 /** שם הלשונית בגיליון */
@@ -43,6 +43,35 @@ const COLUMNS = {
 /* ────────────────────────────── */
 
 const PROP_LAST_ROW = "lastSyncedRow";
+
+/**
+ * להריץ ראשון. לא שולח כלום — רק מדווח אילו עמודות זוהו בגיליון.
+ *
+ * אם שם או טלפון מופיעים כ"לא נמצא", הוסף את הכותרת האמיתית
+ * לרשימה המתאימה ב-COLUMNS למעלה והרץ שוב.
+ */
+function checkColumns() {
+  const sheet = getSheet_();
+  const header = readHeader_(sheet);
+  const idx = mapColumns_(header);
+
+  Logger.log('לשונית: "' + sheet.getName() + '" · ' + (sheet.getLastRow() - 1) + " שורות");
+  Logger.log("כותרות בגיליון: " + header.join(" | "));
+  Logger.log("—");
+
+  Object.keys(COLUMNS).forEach(function (key) {
+    Logger.log(
+      key + ": " + (idx[key] === -1 ? "✗ לא נמצא" : '✓ "' + header[idx[key]] + '"'),
+    );
+  });
+
+  Logger.log("—");
+  if (idx.phone === -1 || (idx.firstName === -1 && idx.fullName === -1)) {
+    Logger.log("✗ חסרות עמודות חובה. הסנכרון לא ירוץ עד שיתוקן.");
+  } else {
+    Logger.log("✓ הכול תקין. אפשר להריץ resyncAll().");
+  }
+}
 
 /** להריץ פעם אחת ביד. מתקין טריגר של כל חמש דקות. */
 function setup() {
@@ -90,20 +119,8 @@ function syncNewSignups() {
   const startRow = Number(props.getProperty(PROP_LAST_ROW) || 1) + 1;
   if (startRow > lastRow) return;
 
-  const header = sheet
-    .getRange(1, 1, 1, sheet.getLastColumn())
-    .getValues()[0]
-    .map(function (h) {
-      return String(h).trim();
-    });
-
-  const idx = {};
-  Object.keys(COLUMNS).forEach(function (key) {
-    idx[key] = -1;
-    COLUMNS[key].forEach(function (name) {
-      if (idx[key] === -1) idx[key] = header.indexOf(name);
-    });
-  });
+  const header = readHeader_(sheet);
+  const idx = mapColumns_(header);
 
   if (idx.phone === -1 || (idx.firstName === -1 && idx.fullName === -1)) {
     Logger.log("לא זוהו עמודות שם וטלפון. כותרות: " + header.join(" | "));
@@ -173,6 +190,27 @@ function syncNewSignups() {
 function getSheet_() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   return ss.getSheetByName(SHEET_NAME) || ss.getSheets()[0];
+}
+
+function readHeader_(sheet) {
+  return sheet
+    .getRange(1, 1, 1, sheet.getLastColumn())
+    .getValues()[0]
+    .map(function (h) {
+      return String(h).trim();
+    });
+}
+
+/** שם עמודה -> אינדקס, או 1- אם לא נמצאה */
+function mapColumns_(header) {
+  const idx = {};
+  Object.keys(COLUMNS).forEach(function (key) {
+    idx[key] = -1;
+    COLUMNS[key].forEach(function (name) {
+      if (idx[key] === -1) idx[key] = header.indexOf(name);
+    });
+  });
+  return idx;
 }
 
 /** מחזיר מחרוזת מצב, או null אם הקריאה עצמה נכשלה */
