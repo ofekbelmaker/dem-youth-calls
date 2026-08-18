@@ -847,3 +847,8 @@ tr.me td { background: var(--signal-dim); }
    לשתי שורות שמקפיצה את גובה שורת הלשוניות */
 .tab-label { white-space: nowrap; }
 .tabs a { min-width: 0; padding-inline: 4px; }
+
+/* התווית האמצעית ארוכה בהרבה מהשתיים האחרות. חלוקה לשלישים שווים
+   הייתה חותכת אותה, לכן הרוחב נגזר מהתוכן. האייקון נשאר גדול —
+   הוא העוגן לעין, והטקסט רק מאשר. */
+.tabs a { flex: 1 1 auto; font-size: 12.5px; }

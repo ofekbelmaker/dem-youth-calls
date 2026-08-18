@@ -21,7 +21,7 @@ export default function TabBar({
 
   const tabs = [
     { href: "/", glyph: "☰", label: "השיחות שלי", badge: 0 },
-    { href: "/waiting", glyph: "◔", label: "וואטסאפים שחזרו", badge: waitingCount },
+    { href: "/waiting", glyph: "◔", label: "לעדכון וואטסאפים שנענו", badge: waitingCount },
     ...(isAdmin ? [{ href: "/event", glyph: "◑", label: "הפעולה", badge: 0 }] : []),
   ];
 
