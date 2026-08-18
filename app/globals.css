@@ -683,13 +683,14 @@ tr.me td { background: var(--signal-dim); }
 }
 .tabs a {
   flex: 1;
-  padding: 12px 0 14px;
+  min-width: 0;
+  padding: 14px 4px 18px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   color: var(--ink-3);
-  font-size: 11.5px;
+  font-size: 13.5px;
   font-weight: 650;
   text-decoration: none;
 }
@@ -809,12 +810,13 @@ tr.me td { background: var(--signal-dim); }
 /* לשוניות גדולות יותר, עם מונה                                      */
 /* ---------------------------------------------------------------- */
 
-/* הלשוניות היו 11.5px עם אייקון 17px — קטן מדי למי שמחזיק טלפון
-   ביד אחת בערב חיוג. גם שטח הנגיעה גדל, לא רק הטקסט. */
-.tabs a { padding: 14px 0 18px; gap: 6px; font-size: 13.5px; }
+/* הגדלים עצמם יושבים בכלל .tabs a למעלה. היו 11.5px עם אייקון
+   17px — קטן מדי למי שמחזיק טלפון ביד אחת בערב חיוג. */
 .tabs .glyph { font-size: 23px; position: relative; }
 
-.tab-label { line-height: 1; }
+/* nowrap: התוויות באורכים שונים, ושבירה לשתי שורות מקפיצה את
+   גובה השורה כולה */
+.tab-label { line-height: 1; white-space: nowrap; }
 
 /* המונה יושב על האייקון, כי שם העין נופלת קודם */
 .tabs .badge {
@@ -843,12 +845,3 @@ tr.me td { background: var(--signal-dim); }
   white-space: nowrap;
 }
 
-/* תווית ארוכה ("וואטסאפים שחזרו") לצד שתי קצרות — מונע שבירה
-   לשתי שורות שמקפיצה את גובה שורת הלשוניות */
-.tab-label { white-space: nowrap; }
-.tabs a { min-width: 0; padding-inline: 4px; }
-
-/* התווית האמצעית ארוכה בהרבה מהשתיים האחרות. חלוקה לשלישים שווים
-   הייתה חותכת אותה, לכן הרוחב נגזר מהתוכן. האייקון נשאר גדול —
-   הוא העוגן לעין, והטקסט רק מאשר. */
-.tabs a { flex: 1 1 auto; font-size: 12.5px; }
