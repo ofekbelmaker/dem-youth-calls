@@ -10,7 +10,7 @@
  */
 
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -35,6 +35,14 @@ const REQUIRED = [
   "SUPABASE_SERVICE_ROLE_KEY",
 ];
 
+/* מזהי הפרויקט מוזנים ל-CLI כמשתני סביבה במקום להישען על חיפוש
+   הגדרות בענן. בלעדיהם הפקודות נופלות ב-"Could not retrieve Project
+   Settings" כשהפרויקט יושב תחת צוות והאסימון לא רואה את רשימת
+   הצוותים — וזו נפילה על הרשאת קריאה, לא על יכולת ההעלאה עצמה. */
+const linked = existsSync(join(ROOT, ".vercel", "project.json"))
+  ? JSON.parse(readFileSync(join(ROOT, ".vercel", "project.json"), "utf8"))
+  : {};
+
 function vercel(args, input) {
   return spawnSync(
     process.platform === "win32" ? "npx.cmd" : "npx",
@@ -44,20 +52,32 @@ function vercel(args, input) {
       input,
       encoding: "utf8",
       shell: process.platform === "win32",
+      env: {
+        ...process.env,
+        ...(linked.orgId ? { VERCEL_ORG_ID: linked.orgId } : {}),
+        ...(linked.projectId ? { VERCEL_PROJECT_ID: linked.projectId } : {}),
+      },
     },
   );
 }
 
 /* ---------- 1. קישור הפרויקט ---------- */
 
-console.log("מקשר פרויקט…");
-const link = vercel(["link", "--yes", "--project", PROJECT]);
-if (link.status !== 0) {
-  console.error(link.stdout);
-  console.error(link.stderr);
-  process.exit(1);
+/* אם .vercel/project.json כבר קיים, הפרויקט מקושר ואין מה לעשות.
+   הדילוג הוא לא ייעול: אסימון מוגבל-פרויקט נכשל דווקא ב-link
+   ומצליח ב-deploy, וקישור מחדש היה עוצר העלאה תקינה לחלוטין. */
+if (existsSync(join(ROOT, ".vercel", "project.json"))) {
+  console.log("הפרויקט כבר מקושר — מדלג על הקישור");
+} else {
+  console.log("מקשר פרויקט…");
+  const link = vercel(["link", "--yes", "--project", PROJECT]);
+  if (link.status !== 0) {
+    console.error(link.stdout);
+    console.error(link.stderr);
+    process.exit(1);
+  }
+  console.log("  מקושר: " + PROJECT);
 }
-console.log("  מקושר: " + PROJECT);
 
 /* ---------- 2. משתני סביבה ---------- */
 
