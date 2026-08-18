@@ -36,38 +36,43 @@ export default function AwaitingList({ items }: { items: AwaitingItem[] }) {
 
   const open = items.filter((i) => !resolved.includes(i.assignmentId));
 
-  if (!open.length) {
-    return (
-      <div className="scroll">
-        <p className="empty">
-          אף אחד לא ממתין לתשובה.
-          <br />
-          מי שתסמן לו &quot;שלחתי וואטסאפ — ממתין&quot; יופיע כאן.
-        </p>
-      </div>
-    );
-  }
-
+  /* הטוסט הוא אח של .scroll ולא ילד שלו: הוא ממוקם absolute, ומיכל
+     עם overflow-y חותך אותו — מה שהופיע כפס כהה בתוך הרשימה.
+     המחלקה open היא מה שמחליק אותו פנימה; בלעדיה הוא נתקע באמצע. */
   return (
-    <div className="scroll">
-      <p className="wait-count">
-        {open.length} ממתינים לתשובה. הם שמורים לך ולא יימסרו לטלפן אחר.
-      </p>
+    <>
+      <div className="scroll">
+        {open.length === 0 ? (
+          <p className="empty">
+            אף אחד לא ממתין לתשובה.
+            <br />
+            מי שתסמן לו &quot;שלחתי וואטסאפ — ממתין&quot; יופיע כאן.
+          </p>
+        ) : (
+          <>
+            <p className="wait-count">
+              {open.length} ממתינים לתשובה. הם שמורים לך ולא יימסרו לטלפן אחר.
+            </p>
 
-      {open.map((item) => (
-        <WaitingRow
-          key={item.assignmentId}
-          item={item}
-          onDone={(name) => {
-            setResolved((prev) => [...prev, item.assignmentId]);
-            setToast(`${name} — תועד`);
-            setTimeout(() => setToast(null), 2500);
-          }}
-        />
-      ))}
+            {open.map((item) => (
+              <WaitingRow
+                key={item.assignmentId}
+                item={item}
+                onDone={(name) => {
+                  setResolved((prev) => [...prev, item.assignmentId]);
+                  setToast(`${name} — תועד`);
+                  setTimeout(() => setToast(null), 2500);
+                }}
+              />
+            ))}
+          </>
+        )}
+      </div>
 
-      {toast && <div className="toast">{toast}</div>}
-    </div>
+      <div className={"toast" + (toast ? " open" : "")} role="status">
+        <span>{toast}</span>
+      </div>
+    </>
   );
 }
 
