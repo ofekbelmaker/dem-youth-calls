@@ -194,7 +194,7 @@ export async function getProgress(
     db.from("assignments").select("id, state").eq("event_id", eventId),
     db
       .from("contacts")
-      .select("id, assignment:assignments!inner(event_id)")
+      .select("id, assignment_id, assignment:assignments!inner(event_id)")
       .eq("contacted_by", callerId)
       .eq("assignment.event_id", eventId),
   ]);
@@ -203,7 +203,9 @@ export async function getProgress(
   return {
     done: all.filter((r) => r.state === "done").length,
     total: all.filter((r) => r.state !== "skipped").length,
-    mine: (mine ?? []).length,
+    /* לפי משימות ולא לפי רשומות: מי שסומן כממתין לוואטסאפ ואז תועד
+       שוב רטרואקטיבית מייצר שתי רשומות על אותו אדם */
+    mine: new Set((mine ?? []).map((r) => r.assignment_id)).size,
   };
 }
 
@@ -375,4 +377,50 @@ export async function getEventDashboard(eventId: string): Promise<{
     .sort((a, b) => b.reached - a.reached);
 
   return { stats, callers };
+}
+
+/* ------------------------------------------------------------------ */
+/* הספרייה: מי שממתין לתשובה בוואטסאפ                                  */
+/* ------------------------------------------------------------------ */
+
+/**
+ * שורה ב-awaiting_whatsapp_queue.
+ * ראה supabase/awaiting-whatsapp.sql — אלה יורדים מהמאגר המשותף
+ * ושמורים לטלפן שסימן אותם בלבד.
+ */
+export type AwaitingItem = {
+  assignmentId: string;
+  personId: string;
+  fullName: string;
+  phoneE164: string;
+  grade: string | null;
+  note: string | null;
+  /** מתי נשלחה ההודעה שממתינים לתשובה עליה */
+  waitingSince: string;
+};
+
+export async function getAwaiting(
+  callerId: string,
+  eventId: string,
+): Promise<AwaitingItem[]> {
+  const { data, error } = await db
+    .from("awaiting_whatsapp_queue")
+    .select(
+      "assignment_id, person_id, full_name, phone_e164, grade, notes, waiting_since",
+    )
+    .eq("owner_profile_id", callerId)
+    .eq("event_id", eventId)
+    .order("waiting_since", { ascending: true });
+
+  if (error) throw new Error(error.message);
+
+  return (data ?? []).map((r) => ({
+    assignmentId: r.assignment_id as string,
+    personId: r.person_id as string,
+    fullName: r.full_name as string,
+    phoneE164: r.phone_e164 as string,
+    grade: r.grade as string | null,
+    note: r.notes as string | null,
+    waitingSince: r.waiting_since as string,
+  }));
 }

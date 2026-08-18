@@ -753,3 +753,42 @@ tr.me td { background: var(--signal-dim); }
   text-align: start;
   margin-top: 2px;
 }
+
+/* ---------------------------------------------------------------- */
+/* ממתין לתשובה בוואטסאפ                                            */
+/* ---------------------------------------------------------------- */
+
+.opt.k-wait[aria-pressed="true"] { background: var(--maybe-dim); color: var(--maybe); }
+
+/* חמש תוצאות בגריד של שתיים — האחרונה נשארת לבדה, אז היא נפרסת */
+.opts.two > :last-child:nth-child(odd) { grid-column: 1 / -1; }
+
+/* פריט בספרייה. מופרד בקו ולא בכרטיס נפרד, כדי שרשימה של עשרה
+   תישאר נגללת ולא תיראה כמו עשרה מסכי שיחה */
+.wait-item { padding: 16px 0; border-bottom: 1px solid var(--line); }
+.wait-item:last-child { border-bottom: 0; }
+
+.wait-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.wait-head h3 { font-size: 16px; font-weight: 650; }
+
+.waiting-since {
+  font-size: 12.5px;
+  color: var(--maybe);
+  background: var(--maybe-dim);
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.wait-count {
+  font-size: 13px;
+  color: var(--ink-3);
+  margin-bottom: 4px;
+}
+
+.wait-item .sub {
+  font-size: 13.5px;
+  color: var(--ink-3);
+  margin-top: 2px;
+}
+.wait-item .reach { margin-top: 12px; }

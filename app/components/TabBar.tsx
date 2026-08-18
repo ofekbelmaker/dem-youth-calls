@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 
 const TABS = [
   { href: "/", glyph: "☰", label: "השיחות שלי" },
+  { href: "/waiting", glyph: "◔", label: "ממתין לי" },
   { href: "/event", glyph: "◑", label: "הפעולה" },
 ];
 

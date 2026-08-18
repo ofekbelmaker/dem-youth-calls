@@ -9,7 +9,8 @@ export type Outcome =
   | "no_answer"
   | "wrong_number"
   | "callback_later"
-  | "opted_out";
+  | "opted_out"
+  | "awaiting_whatsapp";
 
 export type Rsvp = "yes" | "no" | "maybe" | "unknown";
 
