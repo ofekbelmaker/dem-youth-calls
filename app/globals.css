@@ -842,3 +842,8 @@ tr.me td { background: var(--signal-dim); }
   clip-path: inset(50%);
   white-space: nowrap;
 }
+
+/* תווית ארוכה ("וואטסאפים שחזרו") לצד שתי קצרות — מונע שבירה
+   לשתי שורות שמקפיצה את גובה שורת הלשוניות */
+.tab-label { white-space: nowrap; }
+.tabs a { min-width: 0; padding-inline: 4px; }
