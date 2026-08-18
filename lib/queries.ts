@@ -424,3 +424,17 @@ export async function getAwaiting(
     waitingSince: r.waiting_since as string,
   }));
 }
+
+/** רק המספר — ללשונית. שאילתת ספירה, בלי להביא את השורות עצמן. */
+export async function getAwaitingCount(
+  callerId: string,
+  eventId: string,
+): Promise<number> {
+  const { count } = await db
+    .from("awaiting_whatsapp_queue")
+    .select("assignment_id", { count: "exact", head: true })
+    .eq("owner_profile_id", callerId)
+    .eq("event_id", eventId);
+
+  return count ?? 0;
+}

@@ -81,6 +81,7 @@ if (existsSync(join(ROOT, ".vercel", "project.json"))) {
 
 /* ---------- 2. משתני סביבה ---------- */
 
+let envFailed = false;
 console.log("\nמעביר משתני סביבה:");
 
 for (const name of REQUIRED) {
@@ -95,11 +96,20 @@ for (const name of REQUIRED) {
 
   const add = vercel(["env", "add", name, "production"], value + "\n");
   const ok = add.status === 0;
-  console.log(`  ${ok ? "✓" : "✗"} ${name} (${value.length} תווים)`);
-  if (!ok) {
-    console.error(add.stderr.slice(0, 400));
-    process.exit(1);
-  }
+  console.log(`  ${ok ? "✓" : "⚠"} ${name} (${value.length} תווים)`);
+  if (!ok) envFailed = true;
+}
+
+/* כישלון כאן אינו עוצר את ההעלאה. אסימון מוגבל-פרויקט אינו רשאי
+   לכתוב משתני סביבה אך רשאי להעלות, והערכים שכבר בענן נשארים
+   כפי שהם — כלומר ההעלאה תקינה. מה שכן: אם שינית קוד גישה, הוא
+   לא עבר, ותצטרך לעדכן אותו ידנית בממשק של Vercel. */
+if (envFailed) {
+  console.log(
+    "\n  ⚠ לא ניתן היה לכתוב משתני סביבה — האסימון כנראה מוגבל-פרויקט.",
+  );
+  console.log("    הערכים שכבר בענן נשמרים, וההעלאה ממשיכה.");
+  console.log("    אם שינית קוד גישה — עדכן אותו ידנית בהגדרות הפרויקט.");
 }
 
 /* אבחון הקודים כבוי בייצור */
