@@ -22,10 +22,32 @@ export const GATE_MAX_AGE = 60 * 15; // רבע שעה לבחור שם
 /** הערך שנחתם בעוגיית הרכז. קבוע — מה שמגן הוא החתימה. */
 const ADMIN_MARK = "coordinator";
 
-function secret(): string {
-  const s = process.env.SESSION_SECRET;
-  if (!s) throw new Error("SESSION_SECRET is not set");
-  return s;
+/**
+ * חסר סוד? זו תקלת הגדרה, לא מצב תקין — אבל היא לא אמורה להפיל
+ * את האתר.
+ *
+ * קודם הבדיקה זרקה כאן, ומכיוון ש-readSessionValue נקראת מהמידלוור
+ * על כל בקשה, כל מי שכבר היה מחובר קיבל 500 במקום עמוד. מבקר חדש
+ * דווקא לא — הוא בלי עוגייה, והקריאה חוזרת מוקדם. כלומר דווקא
+ * הטלפנים הפעילים היו היחידים שנחסמו.
+ *
+ * ההפרדה עכשיו: אימות שאי אפשר לבצע נחשב "לא מחובר", והמשתמש
+ * מגיע למסך הכניסה. הנפקת עוגייה חדשה עדיין נכשלת ברעש — אין טעם
+ * לחתום חתימה שאי אפשר יהיה לאמת.
+ */
+function secret(): string | null {
+  return process.env.SESSION_SECRET || null;
+}
+
+let warned = false;
+
+function warnMissingSecret(): void {
+  if (warned) return;
+  warned = true;
+  console.error(
+    "SESSION_SECRET אינו מוגדר בסביבת הריצה. אי אפשר לאמת עוגיות, " +
+      "ולכן כל המשתמשים יראו את מסך הכניסה וכניסה חדשה תיכשל.",
+  );
 }
 
 function toBase64Url(bytes: Uint8Array): string {
@@ -34,10 +56,17 @@ function toBase64Url(bytes: Uint8Array): string {
   return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-async function sign(value: string): Promise<string> {
+/** null כשאין סוד — הקוראים מחליטים אם זה "לא מחובר" או שגיאה */
+async function sign(value: string): Promise<string | null> {
+  const s = secret();
+  if (!s) {
+    warnMissingSecret();
+    return null;
+  }
+
   const key = await crypto.subtle.importKey(
     "raw",
-    new TextEncoder().encode(secret()),
+    new TextEncoder().encode(s),
     { name: "HMAC", hash: "SHA-256" },
     false,
     ["sign"],
@@ -58,9 +87,16 @@ function timingSafeEqual(a: string, b: string): boolean {
   return diff === 0;
 }
 
+/** חתימה להנפקה. נכשלת ברעש — עוגייה בלי חתימה תקפה חסרת ערך. */
+async function signOrFail(value: string): Promise<string> {
+  const sig = await sign(value);
+  if (!sig) throw new Error("SESSION_SECRET is not set");
+  return sig;
+}
+
 /** בונה ערך עוגייה חתום עבור מזהה טלפן */
 export async function createSessionValue(callerId: string): Promise<string> {
-  return `${callerId}.${await sign(callerId)}`;
+  return `${callerId}.${await signOrFail(callerId)}`;
 }
 
 /** מחזיר את מזהה הטלפן אם החתימה תקפה, אחרת null */
@@ -74,6 +110,8 @@ export async function readSessionValue(
   const callerId = raw.slice(0, dot);
   const provided = raw.slice(dot + 1);
   const expected = await sign(callerId);
+  /* בלי סוד אין מה להשוות מולו — מתייחסים לזה כאל "לא מחובר" */
+  if (!expected) return null;
 
   return timingSafeEqual(provided, expected) ? callerId : null;
 }
@@ -143,7 +181,7 @@ export function isAdminCodeValid(input: string): boolean {
 }
 
 export async function createAdminValue(): Promise<string> {
-  return `${ADMIN_MARK}.${await sign(ADMIN_MARK)}`;
+  return `${ADMIN_MARK}.${await signOrFail(ADMIN_MARK)}`;
 }
 
 /* ---------- שלב הביניים ---------- */
@@ -156,7 +194,7 @@ export type GateLevel = "caller" | "admin";
  */
 export async function createGateValue(level: GateLevel): Promise<string> {
   const mark = `gate:${level}`;
-  return `${mark}.${await sign(mark)}`;
+  return `${mark}.${await signOrFail(mark)}`;
 }
 
 export async function readGateLevel(
