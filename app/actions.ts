@@ -55,4 +55,5 @@ export async function logContactAction(draft: ContactDraft): Promise<void> {
 
   await insertContact(caller.id, draft);
   revalidatePath("/event");
+  revalidatePath("/waiting");
 }

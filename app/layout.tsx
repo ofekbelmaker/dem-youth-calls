@@ -5,7 +5,12 @@ import RegisterSW from "./components/RegisterSW";
 import Link from "next/link";
 import { signOutAction } from "./enter/actions";
 import { adminSignOutAction } from "./admin/actions";
-import { getCurrentCaller, getIsAdmin } from "@/lib/queries";
+import {
+  getActiveEvent,
+  getAwaitingCount,
+  getCurrentCaller,
+  getIsAdmin,
+} from "@/lib/queries";
 
 export const metadata: Metadata = {
   title: "טלפניה — נוער הדמוקרטים",
@@ -46,6 +51,14 @@ export default async function RootLayout({
     getIsAdmin(),
   ]);
 
+  /* המונה על הלשונית. נטען כאן ולא במסך עצמו, כי כל התועלת שלו היא
+     להיראות דווקא כשנמצאים במקום אחר. */
+  let waitingCount = 0;
+  if (caller) {
+    const event = await getActiveEvent();
+    if (event) waitingCount = await getAwaitingCount(caller.id, event.id);
+  }
+
   return (
     <html lang="he" dir="rtl">
       <body>
@@ -72,8 +85,8 @@ export default async function RootLayout({
 
           {children}
 
-          {/* טאבים רק לרכז — לטלפן רגיל יש מסך אחד בלבד */}
-          {caller && isAdmin && <TabBar />}
+          {/* הטלפן מקבל שתי לשוניות, הרכז גם את "הפעולה" */}
+          {caller && <TabBar isAdmin={isAdmin} waitingCount={waitingCount} />}
         </div>
         <RegisterSW />
       </body>

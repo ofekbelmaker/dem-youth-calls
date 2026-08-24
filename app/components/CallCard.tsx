@@ -26,6 +26,7 @@ const OUTCOMES: { value: Outcome; label: string; kind: string }[] = [
   { value: "no_answer", label: "לא ענה", kind: "k-no" },
   { value: "callback_later", label: "שיחזרו אליו", kind: "k-no" },
   { value: "opted_out", label: "אל תפנו אליי", kind: "k-alert" },
+  { value: "awaiting_whatsapp", label: "שלחתי וואטסאפ — ממתין", kind: "k-wait" },
 ];
 
 const RSVPS: { value: Exclude<Rsvp, "unknown">; label: string; kind: string }[] = [

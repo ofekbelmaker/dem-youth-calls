@@ -3,17 +3,31 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-const TABS = [
-  { href: "/", glyph: "☰", label: "השיחות שלי" },
-  { href: "/event", glyph: "◑", label: "הפעולה" },
-];
-
-export default function TabBar() {
+/**
+ * הלשוניות התחתונות.
+ *
+ * "הפעולה" היא מסך רכז ומוצגת רק לו. שתי האחרות שייכות לטלפן:
+ * המסך שבו מחייגים, והספרייה של מי שממתין לתשובה בוואטסאפ.
+ * בלי הספרייה בלשוניות אין לטלפן רגיל שום דרך להגיע אליה.
+ */
+export default function TabBar({
+  isAdmin,
+  waitingCount,
+}: {
+  isAdmin: boolean;
+  waitingCount: number;
+}) {
   const pathname = usePathname();
+
+  const tabs = [
+    { href: "/", glyph: "☰", label: "השיחות שלי", badge: 0 },
+    { href: "/waiting", glyph: "◔", label: "עדכון וואטסאפים", badge: waitingCount },
+    ...(isAdmin ? [{ href: "/event", glyph: "◑", label: "הפעולה", badge: 0 }] : []),
+  ];
 
   return (
     <nav className="tabs" aria-label="ניווט ראשי">
-      {TABS.map((tab) => (
+      {tabs.map((tab) => (
         <Link
           key={tab.href}
           href={tab.href}
@@ -21,8 +35,14 @@ export default function TabBar() {
         >
           <span className="glyph" aria-hidden="true">
             {tab.glyph}
+            {tab.badge > 0 && <span className="badge">{tab.badge}</span>}
           </span>
-          {tab.label}
+          <span className="tab-label">
+            {tab.label}
+            {tab.badge > 0 && (
+              <span className="sr-only"> — {tab.badge} ממתינים לתשובה</span>
+            )}
+          </span>
         </Link>
       ))}
     </nav>

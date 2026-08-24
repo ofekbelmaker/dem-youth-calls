@@ -10,10 +10,13 @@
 גיליון התשובות
    ↓  scripts/google-apps-script.gs — טריגר כל 5 דקות
 submit_signup()                        supabase/auto-sync.sql
-   ↓  מוסיף שורה ל-people
-טריגר people_sync_open_events          supabase/live-list.sql
-   ↓  מוסיף משימה לכל פעולה פתוחה
+   ↓  מוסיף ל-people ומשבץ לתור
 assignments  →  next_assignment()  →  הכרטיס על המסך
+
+                                       supabase/live-list.sql
+טריגר people_sync_open_events  ────────┘
+   מכסה את מה שמחוץ למסלול הטופס: החזרה לפעילות, הוספה ידנית,
+   וההורדה מהרשימה של מי שעזב או ביקש שלא יפנו אליו
 ```
 
 כל חוליה חיה בלי החוליה שאחריה, ובלי להתלונן. זו הסיבה שכשמשהו
@@ -32,11 +35,14 @@ assignments  →  next_assignment()  →  הכרטיס על המסך
 | `random-order.sql` | סדר אקראי | `next-card.sql` |
 | `skip-log.sql` | תיעוד דילוגים | `migration-shared-list.sql` |
 | `rate-limit.sql` | הגבלת ניסיונות כניסה | `schema.sql` |
-| **`auto-sync.sql`** | **פותח את הדלת לגיליון** | `schema.sql` |
-| **`live-list.sql`** | **מחבר את הדלת לרשימה** | שני הקודמים |
+| `awaiting-whatsapp-1.sql` | תוצאת "ממתין לוואטסאפ" | `schema.sql` |
+| `awaiting-whatsapp-2.sql` | הספרייה הפרטית של הטלפן | הקודם |
+| `reset-round.sql` | איפוס סבב חיוג | `migration-shared-list.sql` |
+| **`auto-sync.sql`** | **פותח את הדלת לגיליון ומשבץ לתור** | `schema.sql` |
+| **`live-list.sql`** | **מכסה את מה שמחוץ למסלול הטופס** | שני הקודמים |
 
-`new-event.sql` ו-`import.sql` הם לא מיגרציות — מריצים אותם כשצריך
-פעולה חדשה או ייבוא ידני.
+`new-event.sql`, `import.sql` ו-`duplicates.sql` הם לא מיגרציות —
+מריצים אותם כשצריך פעולה חדשה, ייבוא ידני, או בדיקת כפילויות.
 
 ## הפעלת הסנכרון
 
@@ -46,7 +52,9 @@ assignments  →  next_assignment()  →  הכרטיס על המסך
 node -e "console.log(require('crypto').randomBytes(24).toString('base64url'))"
 ```
 
-הדבק אותו ב-`auto-sync.sql` במקום `'החלף-אותי'`, והרץ את הקובץ.
+שמור אותו ב-`.env.local` תחת `SIGNUP_SECRET`, הדבק אותו ב-`auto-sync.sql`
+במקום `'כאן-להדביק-מ-env-local'`, והרץ את הקובץ. **אל תשמור אותו בגיט —
+הריפו ציבורי.**
 
 **2. `live-list.sql`.** הרץ. הוא גם משלים לרשימה את כל מי שכבר במסד
 מהייבוא הידני, ומדפיס בסוף שתי בדיקות שאמורות להראות אפס.

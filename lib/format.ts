@@ -6,6 +6,7 @@ export const OUTCOME_LABEL: Record<Outcome, string> = {
   wrong_number: "מספר שגוי",
   callback_later: "שיחזרו אליו",
   opted_out: "ביקש לא לפנות",
+  awaiting_whatsapp: "ממתין לתשובה בוואטסאפ",
 };
 
 export const RSVP_LABEL: Record<Exclude<Rsvp, "unknown">, string> = {
@@ -130,4 +131,17 @@ export function countdownText(startsAt: string): string {
 
 export function firstName(fullName: string): string {
   return fullName.split(" ")[0];
+}
+
+/** "לפני 3 שעות" — כמה זמן ההודעה כבר ממתינה לתשובה */
+export function timeAgo(iso: string): string {
+  const mins = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
+  if (mins < 1) return "הרגע";
+  if (mins < 60) return `לפני ${mins} דק׳`;
+
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `לפני ${hours} שע׳`;
+
+  const days = Math.round(hours / 24);
+  return days === 1 ? "אתמול" : `לפני ${days} ימים`;
 }
