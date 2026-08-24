@@ -1,5 +1,5 @@
 import "server-only";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 /**
  * חיבור למסד — שרת בלבד.
@@ -9,17 +9,41 @@ import { createClient } from "@supabase/supabase-js";
  *
  * המפתח עוקף RLS, ולכן כל שאילתה כאן חייבת לסנן במפורש לפי הטלפן
  * המחובר. אין רשת ביטחון מתחת — הסינון הוא באחריות הקוד.
+ *
+ * החיבור נוצר בפנייה הראשונה ולא בייבוא הקובץ. ההבדל מתגלה רק
+ * בבנייה: Next מריץ את כל המודולים כדי לאסוף מידע על העמודים, ואם
+ * הבדיקה יושבת ברמת המודול היא נכשלת שם — לפני שיש בכלל בקשה.
+ * כך נפלה כל בנייה של Preview ב-Vercel, שבו הסודות מוגדרים לייצור
+ * בלבד. הבדיקה עצמה לא נחלשה: היא רק זזה לרגע השימוש.
  */
 
-const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+let client: SupabaseClient | null = null;
 
-if (!url || !key) {
-  throw new Error(
-    "חסרים NEXT_PUBLIC_SUPABASE_URL או SUPABASE_SERVICE_ROLE_KEY ב-.env.local",
-  );
+function connect(): SupabaseClient {
+  if (client) return client;
+
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!url || !key) {
+    throw new Error(
+      "חסרים NEXT_PUBLIC_SUPABASE_URL או SUPABASE_SERVICE_ROLE_KEY ב-.env.local",
+    );
+  }
+
+  client = createClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+
+  return client;
 }
 
-export const db = createClient(url, key, {
-  auth: { persistSession: false, autoRefreshToken: false },
+/* מתנהג כמו הלקוח עצמו — db.from(...) ו-db.rpc(...) בלי שינוי
+   באף מקום אחר בקוד. */
+export const db: SupabaseClient = new Proxy({} as SupabaseClient, {
+  get(_target, prop) {
+    const c = connect();
+    const value = Reflect.get(c, prop, c);
+    return typeof value === "function" ? value.bind(c) : value;
+  },
 });
