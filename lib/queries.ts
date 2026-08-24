@@ -16,6 +16,7 @@ import type {
   Outcome,
   QueueItem,
   Rsvp,
+  UpcomingCampaign,
 } from "./types";
 
 /* ------------------------------------------------------------------ */
@@ -375,4 +376,84 @@ export async function getEventDashboard(eventId: string): Promise<{
     .sort((a, b) => b.reached - a.reached);
 
   return { stats, callers };
+}
+
+/* ------------------------------------------------------------------ */
+/* יצירת קמפיין                                                        */
+/* ------------------------------------------------------------------ */
+
+export type CampaignInput = {
+  title: string;
+  startsAt: string; // ISO
+  location: string | null;
+  targetCount: number | null;
+};
+
+/**
+ * יוצר קמפיין וממלא את רשימת השיחות שלו.
+ *
+ * שני הצעדים חייבים לקרות יחד: קמפיין בלי generate_assignments הוא
+ * מסך ריק שאי אפשר לחייג ממנו, ואין בממשק דרך להשלים את זה אחר כך.
+ */
+export async function createCampaign(
+  input: CampaignInput,
+  createdBy: string,
+): Promise<{ id: string; assigned: number }> {
+  const { data, error } = await db
+    .from("events")
+    .insert({
+      title: input.title,
+      starts_at: input.startsAt,
+      location: input.location,
+      target_count: input.targetCount,
+      assignment_strategy: "pool",
+      created_by: createdBy,
+    })
+    .select("id")
+    .single();
+
+  if (error) throw new Error(error.message);
+
+  const { data: assigned, error: genError } = await db.rpc(
+    "generate_assignments",
+    { p_event_id: data.id },
+  );
+
+  if (genError) throw new Error(genError.message);
+
+  return { id: data.id, assigned: Number(assigned ?? 0) };
+}
+
+/**
+ * הקמפיינים שעוד לא עברו. נחוץ בממשק כדי שהרכז יבין למה המסך לא
+ * השתנה אחרי שיצר קמפיין רחוק — האפליקציה מציגה תמיד את הקרוב.
+ */
+export async function getUpcomingCampaigns(): Promise<UpcomingCampaign[]> {
+  const { data, error } = await db
+    .from("events")
+    .select("id, title, starts_at, location, target_count, assignments(count)")
+    .gte("starts_at", new Date().toISOString())
+    .order("starts_at", { ascending: true })
+    .limit(20);
+
+  if (error) return [];
+
+  type Row = {
+    id: string;
+    title: string;
+    starts_at: string;
+    location: string | null;
+    target_count: number | null;
+    assignments: { count: number }[] | null;
+  };
+
+  return ((data ?? []) as unknown as Row[]).map((row, i) => ({
+    id: row.id,
+    title: row.title,
+    startsAt: row.starts_at,
+    location: row.location,
+    targetCount: row.target_count,
+    isActive: i === 0,
+    callCount: row.assignments?.[0]?.count ?? 0,
+  }));
 }

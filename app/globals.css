@@ -753,3 +753,48 @@ tr.me td { background: var(--signal-dim); }
   text-align: start;
   margin-top: 2px;
 }
+
+/* ---------- קמפיין חדש ---------- */
+
+.campaign {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 14px 16px;
+}
+.campaign > summary {
+  cursor: pointer;
+  list-style: none;
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: .05em;
+  color: var(--ink-3);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.campaign > summary::-webkit-details-marker { display: none; }
+/* המשולש מצויר ביד כדי שיצביע לכיוון הנכון ב-RTL */
+.campaign > summary::after {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-inline-start: 1.5px solid currentColor;
+  border-block-end: 1.5px solid currentColor;
+  transform: rotate(45deg);
+  margin-inline-start: auto;
+  transition: transform .15s;
+}
+.campaign[open] > summary::after { transform: rotate(-135deg); }
+.campaign > table { margin-top: 12px; }
+
+.field-ok {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--yes);
+  background: var(--yes-dim);
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  line-height: 1.5;
+}

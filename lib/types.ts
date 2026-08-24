@@ -29,6 +29,13 @@ export type EventInfo = {
   targetCount: number | null;
 };
 
+/** קמפיין ברשימת הקרובים במסך הרכז. isActive — זה שמוצג לטלפנים. */
+export type UpcomingCampaign = EventInfo & {
+  isActive: boolean;
+  /** כמה שיחות ברשימה שלו. אפס = נוצר בלי מאגר ואי אפשר לחייג ממנו. */
+  callCount: number;
+};
+
 /** שורה ב-my_queue */
 export type QueueItem = {
   assignmentId: string;
