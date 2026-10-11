@@ -19,15 +19,48 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 let client: SupabaseClient | null = null;
 
+/**
+ * כתובת הפרויקט מתוך המפתח עצמו.
+ *
+ * מפתח service_role הוא JWT, ובמטען שלו יושב `ref` — מזהה הפרויקט
+ * שממנו נבנית הכתובת. כלומר הכתובת אינה מידע נוסף: היא כבר נמצאת
+ * במפתח, ולהגדיר אותה בנפרד זה להזמין את המצב שבו אחת מהשתיים
+ * קיימת והשנייה לא. זה בדיוק מה שהפיל את הייצור.
+ *
+ * מחזיר null כשהמפתח אינו JWT — למשל מפתחות sb_secret_ החדשים של
+ * Supabase, או התקנה עצמאית שכתובתה אינה supabase.co. בשני המקרים
+ * חוזרים לדרוש את המשתנה המפורש.
+ */
+function deriveUrl(key: string): string | null {
+  const payload = key.split(".")[1];
+  if (!payload) return null;
+
+  try {
+    const json = atob(payload.replace(/-/g, "+").replace(/_/g, "/"));
+    const ref = JSON.parse(json)?.ref;
+    return typeof ref === "string" && /^[a-z0-9]+$/.test(ref)
+      ? `https://${ref}.supabase.co`
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 function connect(): SupabaseClient {
   if (client) return client;
 
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!key) {
+    throw new Error("חסר SUPABASE_SERVICE_ROLE_KEY בסביבת הריצה");
+  }
 
-  if (!url || !key) {
+  /* המשתנה המפורש קודם — הוא הדרך לעקוף את הגזירה בהתקנה עצמאית.
+     שים לב שהוא NEXT_PUBLIC_ מסיבות היסטוריות בלבד: הקובץ הזה
+     server-only, והכתובת לא נחוצה בדפדפן. */
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || deriveUrl(key);
+  if (!url) {
     throw new Error(
-      "חסרים NEXT_PUBLIC_SUPABASE_URL או SUPABASE_SERVICE_ROLE_KEY ב-.env.local",
+      "לא ניתן לגזור את כתובת Supabase מהמפתח. הגדר NEXT_PUBLIC_SUPABASE_URL.",
     );
   }
 
