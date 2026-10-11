@@ -49,9 +49,7 @@ function redirectTo(req: NextRequest, pathname: string) {
 export const config = {
   matcher: [
     /* כל מסלול חוץ מנכסים סטטיים, קבצי ההתקנה של האפליקציה,
-       ו-robots.txt שחייב להישאר נגיש לסורקים כדי שיהיה לו ערך.
-       health פטור זמנית — הוא דף אבחון תקלה, ואם השער יחסום אותו
-       הוא יפנה למסך הכניסה במקום להגיד מה שבור. להסרה איתו. */
-    "/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|sw.js|robots.txt|sitemap.xml|health|.*\\.png$).*)",
+       ו-robots.txt שחייב להישאר נגיש לסורקים כדי שיהיה לו ערך */
+    "/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|sw.js|robots.txt|sitemap.xml|.*\\.png$).*)",
   ],
 };
