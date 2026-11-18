@@ -57,7 +57,7 @@ $$;
 
 select
   to_char(e.starts_at, 'DD/MM/YYYY HH24:MI')                as "מתי",
-  case when e.starts_at >= now() then '● פעיל' else '' end  as "",
+  case when e.starts_at >= now() then '● פעיל' else '' end  as "מצב",
   count(a.id)                                               as "במאגר",
   count(a.id) filter (where a.state = 'done')               as "בוצעו"
 from events e

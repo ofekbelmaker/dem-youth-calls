@@ -59,6 +59,7 @@ export default async function EventPage() {
             key="new-campaign"
             upcoming={upcoming}
             startOpen={!event}
+            branchName={caller.branchName ?? null}
           />
         </div>
       </div>

@@ -10,9 +10,12 @@ const INITIAL: CampaignState = { error: null, created: null };
 export default function NewCampaignForm({
   upcoming,
   startOpen,
+  branchName,
 }: {
   upcoming: UpcomingCampaign[];
   startOpen: boolean;
+  /** הסניף שהקמפיין ייווצר תחתיו. null כשעוד אין סניפים. */
+  branchName: string | null;
 }) {
   const [state, formAction, pending] = useActionState(
     createCampaignAction,
@@ -21,7 +24,7 @@ export default function NewCampaignForm({
 
   return (
     <details className="campaign" open={startOpen || state.created !== null}>
-      <summary>קמפיין חדש</summary>
+      <summary>קמפיין חדש{branchName ? ` — ${branchName}` : ""}</summary>
 
       {upcoming.length > 0 && (
         <table>
@@ -92,8 +95,9 @@ export default function NewCampaignForm({
         </button>
 
         <p className="fineprint">
-          הרשימה נבנית מכל הפעילים שמותר לפנות אליהם, ומי שנרשם בטופס
-          מכאן והלאה נכנס אליה לבד.
+          {branchName
+            ? `הרשימה נבנית מהפעילים של סניף ${branchName}, ומי שנרשם בטופס מכאן והלאה נכנס אליה לבד.`
+            : "הרשימה נבנית מכל הפעילים שמותר לפנות אליהם, ומי שנרשם בטופס מכאן והלאה נכנס אליה לבד."}
         </p>
       </form>
     </details>

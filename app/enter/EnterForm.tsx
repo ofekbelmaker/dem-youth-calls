@@ -79,7 +79,7 @@ export function NameStep({
             </option>
             {callers.map((c) => (
               <option key={c.id} value={c.id}>
-                {c.name}
+                {c.branchName ? `${c.name} — ${c.branchName}` : c.name}
               </option>
             ))}
           </select>

@@ -24,14 +24,28 @@ import type {
 /* ------------------------------------------------------------------ */
 
 export async function getCallers(): Promise<Caller[]> {
-  const { data, error } = await db
-    .from("profiles")
-    .select("id, display_name")
-    .eq("is_active", true)
-    .order("created_at");
+  /* שם הסניף מוצג ליד השם במסך הכניסה. כששני סניפים חולקים רשימה
+     אחת, "יוסי" לבדו לא מספיק כדי לדעת על איזה יוסי מדובר. */
+  const pick = (cols: string) =>
+    db.from("profiles").select(cols).eq("is_active", true).order("created_at");
 
-  if (error) throw new Error(error.message);
-  return (data ?? []).map((p) => ({ id: p.id, name: p.display_name }));
+  let res = await pick("id, display_name, branch_id, branches ( name )");
+  if (res.error) res = await pick("id, display_name");
+  if (res.error) throw new Error(res.error.message);
+
+  const rows = (res.data ?? []) as unknown as {
+    id: string;
+    display_name: string;
+    branch_id?: string | null;
+    branches?: { name: string } | null;
+  }[];
+
+  return rows.map((p) => ({
+    id: p.id,
+    name: p.display_name,
+    branchId: p.branch_id ?? null,
+    branchName: p.branches?.name ?? null,
+  }));
 }
 
 /** הטלפן המחובר, או null אם העוגייה מצביעה על מי שכבר לא קיים */
@@ -40,14 +54,28 @@ export async function getCurrentCaller(): Promise<Caller | null> {
   const id = await readSessionValue(store.get(SESSION_COOKIE)?.value);
   if (!id) return null;
 
-  const { data } = await db
-    .from("profiles")
-    .select("id, display_name")
-    .eq("id", id)
-    .eq("is_active", true)
-    .maybeSingle();
+  const pick = (cols: string) =>
+    db.from("profiles").select(cols).eq("id", id).eq("is_active", true).maybeSingle();
 
-  return data ? { id: data.id, name: data.display_name } : null;
+  /* הנפילה לשאילתה בלי branch_id היא מה שמאפשר לקוד לעלות לפני
+     ש-branches.sql רץ. בלעדיה העמודה החסרה הייתה מנתקת את כולם. */
+  let res = await pick("id, display_name, branch_id, branches ( name )");
+  if (res.error) res = await pick("id, display_name");
+  if (!res.data) return null;
+
+  const row = res.data as unknown as {
+    id: string;
+    display_name: string;
+    branch_id?: string | null;
+    branches?: { name: string } | null;
+  };
+
+  return {
+    id: row.id,
+    name: row.display_name,
+    branchId: row.branch_id ?? null,
+    branchName: row.branches?.name ?? null,
+  };
 }
 
 export async function getIsAdmin(): Promise<boolean> {
@@ -59,10 +87,44 @@ export async function getIsAdmin(): Promise<boolean> {
 /* הפעולה                                                              */
 /* ------------------------------------------------------------------ */
 
+/**
+ * הסניף של הטלפן המחובר, או null.
+ *
+ * null משמעו "בלי סינון לפי סניף" — וזו בדיוק ההתנהגות שהייתה לפני
+ * שסניפים היו קיימים. זה מה שמאפשר לקוד הזה לעלות לאוויר לפני
+ * ש-branches.sql רץ במסד: העמודה לא קיימת, השאילתה נכשלת, והאתר
+ * ממשיך לעבוד כמקודם במקום ליפול.
+ */
+async function callerBranchId(): Promise<string | null> {
+  const store = await cookies();
+  const id = await readSessionValue(store.get(SESSION_COOKIE)?.value);
+  if (!id) return null;
+
+  const { data, error } = await db
+    .from("profiles")
+    .select("branch_id")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (error) return null;
+  return (data as { branch_id: string | null } | null)?.branch_id ?? null;
+}
+
+const EVENT_FIELDS = "id, title, starts_at, location, target_count";
+
 export async function getActiveEvent(): Promise<EventInfo | null> {
-  const upcoming = await db
-    .from("events")
-    .select("id, title, starts_at, location, target_count")
+  const branchId = await callerBranchId();
+
+  /* הקרוב שעוד לא עבר, ואם אין — האחרון שהיה. בתוך הסניף בלבד:
+     טלפן צפון שאין לו קמפיין לא אמור לקבל את זה של המרכז. */
+  const scope = (q: ReturnType<typeof eventQuery>) =>
+    branchId ? q.eq("branch_id", branchId) : q;
+
+  function eventQuery() {
+    return db.from("events").select(EVENT_FIELDS);
+  }
+
+  const upcoming = await scope(eventQuery())
     .gte("starts_at", new Date().toISOString())
     .order("starts_at", { ascending: true })
     .limit(1)
@@ -71,9 +133,7 @@ export async function getActiveEvent(): Promise<EventInfo | null> {
   const row =
     upcoming.data ??
     (
-      await db
-        .from("events")
-        .select("id, title, starts_at, location, target_count")
+      await scope(eventQuery())
         .order("starts_at", { ascending: false })
         .limit(1)
         .maybeSingle()
@@ -400,17 +460,24 @@ export type CampaignInput = {
 export async function createCampaign(
   input: CampaignInput,
   createdBy: string,
+  branchId: string | null,
 ): Promise<{ id: string; assigned: number }> {
+  const row: Record<string, unknown> = {
+    title: input.title,
+    starts_at: input.startsAt,
+    location: input.location,
+    target_count: input.targetCount,
+    assignment_strategy: "pool",
+    created_by: createdBy,
+  };
+
+  /* הקמפיין נוצר תחת הסניף של מי שיצר אותו, וזה מה שקובע מי ייכנס
+     לרשימה שלו. בלי סניפים במסד השדה פשוט לא נשלח. */
+  if (branchId) row.branch_id = branchId;
+
   const { data, error } = await db
     .from("events")
-    .insert({
-      title: input.title,
-      starts_at: input.startsAt,
-      location: input.location,
-      target_count: input.targetCount,
-      assignment_strategy: "pool",
-      created_by: createdBy,
-    })
+    .insert(row)
     .select("id")
     .single();
 
@@ -431,10 +498,18 @@ export async function createCampaign(
  * השתנה אחרי שיצר קמפיין רחוק — האפליקציה מציגה תמיד את הקרוב.
  */
 export async function getUpcomingCampaigns(): Promise<UpcomingCampaign[]> {
-  const { data, error } = await db
+  const branchId = await callerBranchId();
+
+  let q = db
     .from("events")
     .select("id, title, starts_at, location, target_count, assignments(count)")
-    .gte("starts_at", new Date().toISOString())
+    .gte("starts_at", new Date().toISOString());
+
+  /* רכז רואה את הקמפיינים של הסניף שלו בלבד — אותו כלל שקובע
+     איזה קמפיין מוצג לטלפנים שלו. */
+  if (branchId) q = q.eq("branch_id", branchId);
+
+  const { data, error } = await q
     .order("starts_at", { ascending: true })
     .limit(20);
 

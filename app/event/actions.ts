@@ -79,6 +79,7 @@ export async function createCampaignAction(
     result = await createCampaign(
       { title, startsAt, location: location || null, targetCount },
       caller.id,
+      caller.branchId,
     );
   } catch (e) {
     return {

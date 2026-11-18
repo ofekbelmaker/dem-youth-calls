@@ -40,9 +40,16 @@ assignments  →  next_assignment()  →  הכרטיס על המסך
 | `reset-round.sql` | איפוס סבב חיוג | `migration-shared-list.sql` |
 | **`auto-sync.sql`** | **פותח את הדלת לגיליון ומשבץ לתור** | `schema.sql` |
 | **`live-list.sql`** | **מכסה את מה שמחוץ למסלול הטופס** | שני הקודמים |
+| **`branches.sql`** | **סניפים: מרכז וחיפה־צפון** | `live-list.sql` |
+| **`north-cities.sql`** | **אילו יישובים שייכים לצפון** | `branches.sql` |
 
-`new-event.sql`, `import.sql` ו-`duplicates.sql` הם לא מיגרציות —
-מריצים אותם כשצריך פעולה חדשה, ייבוא ידני, או בדיקת כפילויות.
+`new-event.sql`, `import.sql`, `duplicates.sql`, `city-survey.sql`
+ו-`reset-round.sql` הם לא מיגרציות — מריצים אותם כשצריך פעולה חדשה,
+ייבוא ידני, בדיקת כפילויות, סקר יישובים או איפוס סבב.
+
+⚠️ `branches.sql` דורס את `submit_signup` בגרסה שמודעת לסניפים.
+הרצה חוזרת של `auto-sync.sql` מחזירה את הגרסה העיוורת — אם הרצת
+אותו שוב, הרץ אחריו גם את `branches.sql`.
 
 ## הפעלת הסנכרון
 

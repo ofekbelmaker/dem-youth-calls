@@ -20,6 +20,10 @@ export type AssignmentState = "pending" | "done" | "skipped";
 export type Caller = {
   id: string;
   name: string;
+  /** הסניף שלו. null כשעוד לא הוגדרו סניפים — אז אין סינון. */
+  branchId: string | null;
+  /** שם הסניף, להצגה. נשלף רק ברשימת הכניסה. */
+  branchName?: string | null;
 };
 
 export type EventInfo = {
